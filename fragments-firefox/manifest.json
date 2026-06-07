@@ -1,0 +1,54 @@
+{
+  "manifest_version": 2,
+  "name": "Fragments",
+  "version": "0.1.0",
+  "description": "Highlight a word to save it as a vocabulary fragment.",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "fragments@loveltie",
+      "strict_min_version": "91.0"
+    }
+  },
+
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16":  "assets/icon16.png",
+      "48":  "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16":  "assets/icon16.png",
+    "48":  "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js":  ["polyfill.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "background": {
+    "scripts": ["polyfill.js", "db/db.js", "background.js"],
+    "persistent": false
+  },
+
+  "web_accessible_resources": [
+    "assets/icon16.png",
+    "assets/icon48.png",
+    "assets/icon128.png"
+  ]
+}

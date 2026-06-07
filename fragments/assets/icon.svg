@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- indigo background pill -->
+  <rect width="128" height="128" rx="22" fill="#6366f1"/>
+  <!-- 4-pointed sparkle: outer r=44, inner r≈14 -->
+  <path d="M64 20 L74 54 L108 64 L74 74 L64 108 L54 74 L20 64 L54 54 Z"
+        fill="#ffffff" opacity="0.95"/>
+</svg>

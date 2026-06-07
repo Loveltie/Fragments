@@ -1,0 +1,65 @@
+/* ── Save button ─────────────────────────────────────────────────────────── */
+
+#fragments-btn {
+  position: fixed;
+  z-index: 2147483647;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1.5px solid rgba(0, 0, 0, 0.07);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.7);
+  transition: opacity 0.13s ease, transform 0.13s ease, box-shadow 0.13s ease;
+}
+
+#fragments-btn.fragments-show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+#fragments-btn img {
+  width: 18px;
+  height: 18px;
+  display: block;
+  pointer-events: none;
+}
+
+#fragments-btn:hover {
+  transform: scale(1.18) !important;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.22);
+}
+
+/* ── Star burst particles ─────────────────────────────────────────────────── */
+
+.fragments-star {
+  position: fixed;
+  z-index: 2147483647;
+  pointer-events: none;
+  font-size: 15px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  animation: fragments-drift 0.68s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes fragments-drift {
+  0% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--dx)),
+        calc(-50% + var(--dy))
+      ) scale(0.25);
+    opacity: 0;
+  }
+}

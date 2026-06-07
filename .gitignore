@@ -1,0 +1,16 @@
+# AI tool config
+.claude/
+
+# Build artifacts
+*.zip
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor / tooling
+.vscode/
+node_modules/

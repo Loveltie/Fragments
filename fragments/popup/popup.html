@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fragments</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img class="brand-icon" src="../assets/icon48.png" alt="" width="20" height="20">
+      <span class="brand-name">Fragments</span>
+    </div>
+    <span id="count"></span>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="words">Words</button>
+    <button class="tab-btn"        data-tab="create-cards">Create cards</button>
+    <button class="tab-btn"        data-tab="review">Review</button>
+  </nav>
+
+  <!-- Export bar (shown above the word list) -->
+  <div id="export-bar" hidden>
+    <button class="export-btn" id="copy-all">Copy all for AI</button>
+    <button class="export-btn" id="copy-untranslated">Copy untranslated for AI</button>
+    <button class="export-btn is-danger" id="dedup-btn" hidden>Remove duplicates</button>
+    <span id="copy-msg"></span>
+  </div>
+
+  <!-- Words view -->
+  <div id="view-words" class="view"></div>
+
+  <!-- Review view -->
+  <div id="view-review" class="view" hidden></div>
+
+  <!-- Create cards view -->
+  <div id="view-create-cards" class="view" hidden>
+    <div class="import-pane">
+      <p class="import-hint">
+        One entry per line — <code>word | article | translation | example</code>
+      </p>
+      <textarea id="import-text"
+        placeholder="Förderprogramm | das, -e | funding program | Der Senat startet ein Förderprogramm."
+        spellcheck="false"></textarea>
+      <div class="import-footer">
+        <button id="import-btn">Add cards</button>
+        <span id="import-msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
