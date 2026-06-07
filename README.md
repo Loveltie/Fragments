@@ -1,6 +1,6 @@
 # Fragments
 
-A browser extension for saving vocabulary as you browse. Highlight any word on a page, click the sparkle button, and it's captured — along with the sentence it appeared in and the page it came from. A built-in spaced-repetition system then schedules reviews so the words actually stick.
+A browser extension for saving vocabulary as you browse. Highlight any word on a page, click the sparkle button, and it's captured! along with the sentence it appeared in and the page it came from. A built-in spaced-repetition system then schedules reviews so the words actually stick.
 
 ---
 
