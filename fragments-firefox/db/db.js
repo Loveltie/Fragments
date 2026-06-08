@@ -4,6 +4,13 @@ const _DB_NAME    = 'fragments-db';
 const _DB_STORE   = 'words';
 const _DB_VERSION = 1;
 
+// Returns the language pair for a card (e.g. "de-en").
+// Cards saved before multi-language support was added have no lang field;
+// treat those as "de-en" so existing data continues to work unchanged.
+function getCardLang(card) {
+  return card.lang || 'de-en';
+}
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(_DB_NAME, _DB_VERSION);
@@ -30,6 +37,7 @@ async function saveWord(entry) {
       sourceUrl:   entry.sourceUrl   ?? '',
       sourceTitle: entry.sourceTitle ?? '',
       createdAt:   entry.createdAt   ?? new Date().toISOString(),
+      lang:        entry.lang        ?? 'de-en',
       article:     null,
       translation: null,
       example:     null,
@@ -53,15 +61,17 @@ async function getAllWords() {
   });
 }
 
-// Returns cards that are due for review: must have a translation, and either
-// never reviewed (fsrs is null/undefined) or their due date has passed.
-async function getDueCards() {
+// Returns cards that are due for review for the given language pair.
+// Only cards whose lang (via getCardLang) matches are included, so cards
+// from other pairs stay invisible until their pair is selected again.
+async function getDueCards(lang = 'de-en') {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const req = db.transaction(_DB_STORE, 'readonly').objectStore(_DB_STORE).getAll();
     req.onsuccess = () => {
       const now = new Date();
       resolve(req.result.filter(r =>
+        getCardLang(r) === lang &&
         r.translation &&
         (!r.fsrs || new Date(r.fsrs.due) <= now)
       ));
@@ -130,6 +140,7 @@ async function upsertWords(entries) {
           article:     entry.article     || rec.article     || null,
           translation: entry.translation || rec.translation || null,
           example:     entry.example     || rec.example     || null,
+          lang:        entry.lang        || rec.lang        || 'de-en',
         });
         updated++;
       } else {
@@ -139,6 +150,7 @@ async function upsertWords(entries) {
           sourceUrl:   '',
           sourceTitle: '',
           createdAt:   new Date().toISOString(),
+          lang:        entry.lang        || 'de-en',
           article:     entry.article     || null,
           translation: entry.translation || null,
           example:     entry.example     || null,
@@ -150,5 +162,15 @@ async function upsertWords(entries) {
         added++;
       }
     }
+  });
+}
+
+// Delete a single card by its numeric id.
+async function deleteWord(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(_DB_STORE, 'readwrite').objectStore(_DB_STORE).delete(id);
+    req.onsuccess = () => resolve(true);
+    req.onerror   = ({ target: { error } }) => reject(error);
   });
 }

@@ -83,30 +83,31 @@
     const cy = viewportRect.top  + viewportRect.height / 2;
     hideButton();
 
-    chrome.runtime.sendMessage(
-      {
-        action:  'save',
-        payload: {
-          word:        text,
-          sentence,
-          sourceUrl:   location.href,
-          sourceTitle: document.title,
-          createdAt:   new Date().toISOString(),
-        },
+    // Use browser.runtime.sendMessage (Firefox's native Promise-based API) rather
+    // than the chrome.* callback shim.  The chrome.* shim's "return true" channel
+    // keep-alive interacts poorly with async Promise chains in Firefox MV2 event
+    // pages, causing the response to arrive after the port has already closed.
+    browser.runtime.sendMessage({
+      action:  'save',
+      payload: {
+        word:        text,
+        sentence,
+        sourceUrl:   location.href,
+        sourceTitle: document.title,
+        createdAt:   new Date().toISOString(),
       },
-      (resp) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Fragments]', chrome.runtime.lastError.message);
-          return;
-        }
-        if (resp?.ok) {
-          burstStars(cx, cy);
-          playChime();
-        } else {
-          console.error('[Fragments] save rejected:', resp?.error);
-        }
+    })
+    .then(resp => {
+      if (resp?.ok) {
+        burstStars(cx, cy);
+        playChime();
+      } else {
+        console.error('[Fragments] save rejected:', resp?.error);
       }
-    );
+    })
+    .catch(err => {
+      console.error('[Fragments]', err.message);
+    });
   }
 
   // ── Star burst animation ──────────────────────────────────────────────────

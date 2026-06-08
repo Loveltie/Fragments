@@ -3,7 +3,9 @@ importScripts('db/db.js');
 // ── Badge ──────────────────────────────────────────────────────────────────
 
 async function updateBadge() {
-  const cards = await getDueCards();
+  const { sourceLang = 'de', targetLang = 'en' } =
+    await chrome.storage.local.get(['sourceLang', 'targetLang']);
+  const cards = await getDueCards(`${sourceLang}-${targetLang}`);
   const count = cards.length;
   chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
   if (count > 0) {
@@ -19,7 +21,9 @@ async function updateBadge() {
 // Notifies only when the due count grows since the last check.
 
 async function checkAndNotify() {
-  const cards = await getDueCards();
+  const { sourceLang = 'de', targetLang = 'en' } =
+    await chrome.storage.local.get(['sourceLang', 'targetLang']);
+  const cards = await getDueCards(`${sourceLang}-${targetLang}`);
   const count = cards.length;
 
   // Update badge
@@ -64,7 +68,17 @@ chrome.alarms.onAlarm.addListener(alarm => {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.action === 'save') {
-    saveWord(msg.payload)
+    // Popup saves already carry a lang value; content-script saves do not,
+    // so we look up the stored active pair and inject it before writing.
+    const getPayload = msg.payload.lang
+      ? Promise.resolve(msg.payload)
+      : chrome.storage.local.get(['sourceLang', 'targetLang']).then(
+          ({ sourceLang = 'de', targetLang = 'en' }) =>
+            ({ ...msg.payload, lang: `${sourceLang}-${targetLang}` })
+        );
+
+    getPayload
+      .then(payload => saveWord(payload))
       .then(id => {
         console.log('[Fragments] saved:', JSON.stringify(msg.payload.word), '→ id', id);
         updateBadge();
@@ -85,7 +99,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.action === 'getDue') {
-    getDueCards()
+    chrome.storage.local.get(['sourceLang', 'targetLang'])
+      .then(({ sourceLang = 'de', targetLang = 'en' }) =>
+        getDueCards(`${sourceLang}-${targetLang}`)
+      )
       .then(cards => sendResponse({ cards }))
       .catch(err  => sendResponse({ cards: [], error: err.message }));
     return true;

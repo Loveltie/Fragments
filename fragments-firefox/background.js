@@ -5,7 +5,9 @@
 // ── Badge ──────────────────────────────────────────────────────────────────
 
 async function updateBadge() {
-  const cards = await getDueCards();
+  const { sourceLang = 'de', targetLang = 'en' } =
+    await browser.storage.local.get(['sourceLang', 'targetLang']);
+  const cards = await getDueCards(`${sourceLang}-${targetLang}`);
   const count = cards.length;
   chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
   if (count > 0) {
@@ -21,7 +23,9 @@ async function updateBadge() {
 // Notifies only when the due count grows since the last check.
 
 async function checkAndNotify() {
-  const cards = await getDueCards();
+  const { sourceLang = 'de', targetLang = 'en' } =
+    await browser.storage.local.get(['sourceLang', 'targetLang']);
+  const cards = await getDueCards(`${sourceLang}-${targetLang}`);
   const count = cards.length;
 
   // Update badge
@@ -34,7 +38,7 @@ async function checkAndNotify() {
   }
 
   // Notify only when the queue grows (new cards became due)
-  const { lastKnownDue = 0 } = await chrome.storage.local.get('lastKnownDue');
+  const { lastKnownDue = 0 } = await browser.storage.local.get('lastKnownDue');
   if (count > lastKnownDue) {
     chrome.notifications.create('fragments-due', {
       type:    'basic',
@@ -43,7 +47,7 @@ async function checkAndNotify() {
       message: `${count} word${count === 1 ? '' : 's'} ready to review.`,
     });
   }
-  await chrome.storage.local.set({ lastKnownDue: count });
+  await browser.storage.local.set({ lastKnownDue: count });
 }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -66,7 +70,17 @@ chrome.alarms.onAlarm.addListener(alarm => {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.action === 'save') {
-    saveWord(msg.payload)
+    // Popup saves already carry a lang value; content-script saves do not,
+    // so we look up the stored active pair and inject it before writing.
+    const getPayload = msg.payload.lang
+      ? Promise.resolve(msg.payload)
+      : browser.storage.local.get(['sourceLang', 'targetLang']).then(
+          ({ sourceLang = 'de', targetLang = 'en' }) =>
+            ({ ...msg.payload, lang: `${sourceLang}-${targetLang}` })
+        );
+
+    getPayload
+      .then(payload => saveWord(payload))
       .then(id => {
         console.log('[Fragments] saved:', JSON.stringify(msg.payload.word), '→ id', id);
         updateBadge();
@@ -87,7 +101,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.action === 'getDue') {
-    getDueCards()
+    browser.storage.local.get(['sourceLang', 'targetLang'])
+      .then(({ sourceLang = 'de', targetLang = 'en' }) =>
+        getDueCards(`${sourceLang}-${targetLang}`)
+      )
       .then(cards => sendResponse({ cards }))
       .catch(err  => sendResponse({ cards: [], error: err.message }));
     return true;
@@ -100,6 +117,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         updateBadge();
         sendResponse({ ok: true });
       })
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.action === 'deleteWord') {
+    deleteWord(msg.id)
+      .then(() => { updateBadge(); sendResponse({ ok: true }); })
       .catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
   }

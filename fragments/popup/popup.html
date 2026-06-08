@@ -15,6 +15,19 @@
     <span id="count"></span>
   </header>
 
+  <!-- Language pair selector -->
+  <div id="lang-bar">
+    <div class="lang-field">
+      <label class="lang-label" for="sel-source">Capturing from</label>
+      <select id="sel-source" class="lang-select"></select>
+    </div>
+    <button id="lang-swap" class="lang-swap" title="Swap languages" aria-label="Swap languages">⇄</button>
+    <div class="lang-field">
+      <label class="lang-label" for="sel-target">Into</label>
+      <select id="sel-target" class="lang-select"></select>
+    </div>
+  </div>
+
   <nav class="tab-nav">
     <button class="tab-btn active" data-tab="words">Words</button>
     <button class="tab-btn"        data-tab="create-cards">Create cards</button>
@@ -42,11 +55,15 @@
         One entry per line — <code>word | article | translation | example</code>
       </p>
       <textarea id="import-text"
-        placeholder="Förderprogramm | das, -e | funding program | Der Senat startet ein Förderprogramm."
+        placeholder="word | article | translation | example sentence"
         spellcheck="false"></textarea>
       <div class="import-footer">
         <button id="import-btn">Add cards</button>
         <span id="import-msg"></span>
+      </div>
+      <div class="import-footer">
+        <button id="create-copy-untr-btn" class="export-btn">Copy untranslated for AI</button>
+        <span id="create-copy-msg"></span>
       </div>
     </div>
   </div>

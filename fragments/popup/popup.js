@@ -20,29 +20,158 @@ function sendMsg(msg) {
   return new Promise(resolve => chrome.runtime.sendMessage(msg, resolve));
 }
 
+// ── Language configuration ─────────────────────────────────────────────────
+
+const LANGS = [
+  { code: 'de', name: 'German'  },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'it', name: 'Italian' },
+  { code: 'fr', name: 'French'  },
+];
+
+// Article/gender rule for each source language, embedded verbatim into the AI prompt.
+// Each value is one or two "- bullet" lines (with a real newline between them where needed).
+// To add a new language: add its ISO 639-1 code as a key.
+// _default is used for any code not listed here.
+const ARTICLE_RULES = {
+  de: `- Nouns: fill article as "der/die/das, plural" (e.g. "das, -e" or "die, Häuser")
+- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)`,
+  es: `- Nouns: fill article as grammatical gender — "el" (masculine) or "la" (feminine)
+- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)`,
+  it: `- Nouns: fill article as the singular definite article (e.g. "il", "la", "lo", "l'")
+- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)`,
+  fr: `- Nouns: fill article as grammatical gender — "le" (masculine), "la" (feminine), or "l'" (before a vowel)
+- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)`,
+  en: `- Leave the article field blank for all words — English has no grammatical gender`,
+  _default: `- Nouns: include grammatical gender or definite article if the source language uses one, otherwise leave blank
+- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)`,
+};
+
+// One realistic example line per source language for the Create Cards textarea placeholder.
+const PLACEHOLDER_EXAMPLES = {
+  de: 'Förderprogramm | das, -e | funding program | Der Senat startet ein Förderprogramm.',
+  es: 'madrugada | la | early morning | Me desperté en la madrugada.',
+  it: 'tramonto | il | sunset | Il tramonto era bellissimo.',
+  fr: 'dépaysement | le | disorientation | Elle ressentait un fort dépaysement.',
+  en: 'serendipity | | happy accident | It was pure serendipity that we met.',
+};
+
+function getActiveLang() {
+  const src = document.getElementById('sel-source').value;
+  const tgt = document.getElementById('sel-target').value;
+  return `${src}-${tgt}`;
+}
+
+// Disables the option in each select that matches the other's current value,
+// preventing both dropdowns from being set to the same language.
+function updateLangGuard() {
+  const srcVal = document.getElementById('sel-source').value;
+  const tgtVal = document.getElementById('sel-target').value;
+  document.querySelectorAll('#sel-source option').forEach(o => {
+    o.disabled = o.value === tgtVal;
+  });
+  document.querySelectorAll('#sel-target option').forEach(o => {
+    o.disabled = o.value === srcVal;
+  });
+}
+
+// Resets and reloads the review queue when the active language pair changes.
+// Clears practice mode so mid-session state from the previous pair doesn't
+// bleed into the newly selected language.
+function onLangChange() {
+  practiceMode = false;
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+  if (activeTab === 'review') {
+    loadReview();
+  } else if (activeTab === 'words') {
+    loadWords();
+  }
+  updatePlaceholder();
+}
+
+// Sets the Create Cards textarea placeholder to a realistic example in the
+// currently selected source language so it doesn't show a German example
+// when the user has switched to Spanish, French, etc.
+function updatePlaceholder() {
+  const [src] = getActiveLang().split('-');
+  const el = document.getElementById('import-text');
+  if (el) el.placeholder = PLACEHOLDER_EXAMPLES[src] ?? 'word | article | translation | example sentence';
+}
+
+async function initLangBar() {
+  const srcSel = document.getElementById('sel-source');
+  const tgtSel = document.getElementById('sel-target');
+
+  // Populate both selects from the shared language list
+  LANGS.forEach(({ code, name }) => {
+    srcSel.appendChild(new Option(name, code));
+    tgtSel.appendChild(new Option(name, code));
+  });
+
+  // Restore persisted pair, defaulting to de → en
+  const { sourceLang = 'de', targetLang = 'en' } =
+    await chrome.storage.local.get(['sourceLang', 'targetLang']);
+  srcSel.value = sourceLang;
+  tgtSel.value = targetLang;
+  updateLangGuard();
+  updatePlaceholder();
+
+  // Persist on change, re-apply the guard, and refresh the active tab
+  srcSel.addEventListener('change', () => {
+    chrome.storage.local.set({ sourceLang: srcSel.value });
+    updateLangGuard();
+    onLangChange();
+  });
+  tgtSel.addEventListener('change', () => {
+    chrome.storage.local.set({ targetLang: tgtSel.value });
+    updateLangGuard();
+    onLangChange();
+  });
+
+  // Swap button: exchange source ↔ target, persist, and refresh
+  document.getElementById('lang-swap').addEventListener('click', () => {
+    const prev = srcSel.value;
+    srcSel.value = tgtSel.value;
+    tgtSel.value = prev;
+    chrome.storage.local.set({ sourceLang: srcSel.value, targetLang: tgtSel.value });
+    updateLangGuard();
+    onLangChange();
+  });
+}
+
 // ── Prompt template ────────────────────────────────────────────────────────
 
-const PROMPT_TEMPLATE =
-`For each word below, return exactly one line per word in this format:
-word | article, plural | translation | example sentence
+// Returns the human-readable language name for a code (falls back to the raw code).
+function langName(code) {
+  return LANGS.find(l => l.code === code)?.name ?? code;
+}
+
+// Builds the AI export prompt for a given source → target language pair.
+// The article grammar rule and translation target language adapt automatically;
+// everything else stays the same so the existing import parser keeps working.
+function buildPromptTemplate(srcCode, tgtCode) {
+  const articleRule = ARTICLE_RULES[srcCode] ?? ARTICLE_RULES._default;
+  return `For each word below, return exactly one line per word in this format:
+word | article | translation | example sentence
 
 Rules:
 - Use the word exactly as I wrote it — don't correct or normalize it
-- Nouns: fill article as "der/die/das, plural" (e.g. "das, -e" or "die, Häuser")
-- Verbs, adjectives, adverbs, other: leave the article field blank (keep the pipes)
-- Translation: concise English meaning, no extra explanation
-- Example: one natural sentence in the source language that uses the word in context
+${articleRule}
+- Translation: concise ${langName(tgtCode)} meaning, no extra explanation
+- Example: one natural sentence in ${langName(srcCode)} that uses the word in context
 
 Output only the formatted lines — no headers, numbering, blank lines, or commentary.
 
 Words:`;
-
-function buildPrompt(wordList) {
-  return PROMPT_TEMPLATE + '\n' + wordList.map(e => e.word).join('\n');
 }
 
-async function copyPrompt(wordList) {
-  const msgEl = document.getElementById('copy-msg');
+function buildPrompt(wordList) {
+  const [src, tgt] = getActiveLang().split('-');
+  return buildPromptTemplate(src, tgt) + '\n' + wordList.map(e => e.word).join('\n');
+}
+
+async function copyPrompt(wordList, msgEl = document.getElementById('copy-msg')) {
   if (wordList.length === 0) {
     msgEl.className = 'msg-warn'; msgEl.textContent = 'No words to copy.'; return;
   }
@@ -53,6 +182,15 @@ async function copyPrompt(wordList) {
   } catch {
     msgEl.className = 'msg-err'; msgEl.textContent = 'Failed.';
   }
+}
+
+// Fetches the active pair's untranslated cards fresh and copies them as an AI prompt.
+// Used by the Words tab button (via loadWords) and the Create Cards tab button.
+async function copyUntranslated(msgEl) {
+  const { words: allWords = [] } = await sendMsg({ action: 'getAll' });
+  const activeLang = getActiveLang();
+  const untranslated = allWords.filter(w => (w.lang || 'de-en') === activeLang && !w.translation);
+  await copyPrompt(untranslated, msgEl);
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────
@@ -85,7 +223,9 @@ async function loadWords() {
   const listEl    = document.getElementById('view-words');
   const exportBar = document.getElementById('export-bar');
 
-  const { words = [] } = await sendMsg({ action: 'getAll' });
+  const { words: allWords = [] } = await sendMsg({ action: 'getAll' });
+  const activeLang = getActiveLang();
+  const words = allWords.filter(w => (w.lang || 'de-en') === activeLang);
 
   countEl.textContent = `${words.length} ${words.length === 1 ? 'word' : 'words'}`;
 
@@ -155,12 +295,14 @@ let reviewIdx    = 0;     // current position in queue
 let practiceMode = false; // true = all translated cards, no FSRS writes
 
 async function loadReview() {
+  const activeLang = getActiveLang();
   if (practiceMode) {
     const { words = [] } = await sendMsg({ action: 'getAll' });
-    reviewQueue = words.filter(w => w.translation);
+    // Filter client-side: practice pulls all cards, so we apply the lang check here
+    reviewQueue = words.filter(w => w.translation && (w.lang || 'de-en') === activeLang);
   } else {
     const { cards = [] } = await sendMsg({ action: 'getDue' });
-    reviewQueue = cards;
+    reviewQueue = cards; // already filtered by lang pair in background.js
   }
   reviewIdx = 0;
   renderCard();
@@ -217,7 +359,10 @@ function renderCard() {
           ? practiceBtn('Exit', true)
           : practiceBtn('Practice all')}
       </div>
-      <span class="review-progress">${reviewIdx + 1} / ${reviewQueue.length}</span>
+      <div class="review-meta-right">
+        <span class="review-progress">${reviewIdx + 1} / ${reviewQueue.length}</span>
+        <button class="fc-delete-btn" title="Delete this card" aria-label="Delete this card">⋯</button>
+      </div>
     </div>
 
     <div class="flashcard" id="flashcard">
@@ -260,7 +405,26 @@ function renderCard() {
   );
   el.querySelector('.fc-forvo')?.addEventListener('click', e => {
     e.stopPropagation();
-    chrome.tabs.create({ url: `https://forvo.com/word/${encodeURIComponent(entry.word)}/#de` });
+    const srcLang = (entry.lang || 'de-en').split('-')[0] || 'de';
+    chrome.tabs.create({ url: `https://forvo.com/word/${encodeURIComponent(entry.word)}/#${srcLang}` });
+  });
+  el.querySelector('.fc-delete-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    if (el.querySelector('.review-delete-bar')) return; // already showing
+    const bar = document.createElement('div');
+    bar.className = 'review-delete-bar';
+    bar.innerHTML = `
+      <span class="review-delete-prompt">Delete this card?</span>
+      <button class="review-delete-ok">Delete</button>
+      <button class="review-delete-cancel">Cancel</button>
+    `;
+    el.querySelector('.review-actions').insertAdjacentElement('beforebegin', bar);
+    bar.querySelector('.review-delete-ok').addEventListener('click', async () => {
+      reviewQueue.splice(reviewIdx, 1);
+      await sendMsg({ action: 'deleteWord', id: entry.id });
+      renderCard();
+    });
+    bar.querySelector('.review-delete-cancel').addEventListener('click', () => bar.remove());
   });
 }
 
@@ -336,7 +500,8 @@ function parseLines(text) {
 document.getElementById('import-btn').addEventListener('click', async () => {
   const textarea = document.getElementById('import-text');
   const msgEl    = document.getElementById('import-msg');
-  const entries  = parseLines(textarea.value);
+  const lang     = getActiveLang();
+  const entries  = parseLines(textarea.value).map(e => ({ ...e, lang }));
 
   if (entries.length === 0) {
     msgEl.className = 'msg-warn'; msgEl.textContent = 'Nothing to import.'; return;
@@ -358,6 +523,10 @@ document.getElementById('import-btn').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('create-copy-untr-btn').addEventListener('click', () => {
+  copyUntranslated(document.getElementById('create-copy-msg'));
+});
+
 // ── In-popup selection save ────────────────────────────────────────────────
 // Mirrors the content script behaviour but runs inside the popup's own document.
 
@@ -369,7 +538,12 @@ function getPopupBtn() {
   if (_popupBtn) return _popupBtn;
   _popupBtn = document.createElement('button');
   _popupBtn.id = 'popup-save-btn';
-  _popupBtn.textContent = '✨';
+  const _btnImg = document.createElement('img');
+  _btnImg.src = chrome.runtime.getURL('assets/icon48.png');
+  _btnImg.width = 18;
+  _btnImg.height = 18;
+  _btnImg.setAttribute('aria-hidden', 'true');
+  _popupBtn.appendChild(_btnImg);
   _popupBtn.setAttribute('aria-label', 'Save to Fragments');
   document.body.appendChild(_popupBtn);
   _popupBtn.addEventListener('click', e => { e.stopPropagation(); handlePopupSave(); });
@@ -402,6 +576,27 @@ function extractPopupSentence(node, word) {
   return raw.slice(0, 300);
 }
 
+// Chime for in-popup saves — identical tones to the content-script capture sound.
+function playPopupChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [[523.25, 0], [659.25, 0.09]].forEach(([freq, delay]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type            = 'sine';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.12, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    });
+  } catch (_) {}
+}
+
 async function handlePopupSave() {
   if (!_popupSel) return;
   clearTimeout(_popupDebounce);
@@ -416,8 +611,10 @@ async function handlePopupSave() {
       sourceUrl:   'fragments://popup',
       sourceTitle: 'Fragments',
       createdAt:   new Date().toISOString(),
+      lang:        getActiveLang(),
     },
   });
+  playPopupChime();
   loadWords(); // refreshes count badge and list
 }
 
@@ -439,16 +636,43 @@ document.addEventListener('mousedown', e => {
 
 // ── Card delete — single delegated listener, registered once at startup ────
 document.getElementById('view-words').addEventListener('click', async e => {
-  const btn = e.target.closest('.card-delete');
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  await sendMsg({ action: 'deleteWord', id: Number(btn.dataset.id) });
-  loadWords();
+  // Confirm: proceed with delete
+  const okBtn = e.target.closest('.card-delete-ok');
+  if (okBtn && !okBtn.disabled) {
+    okBtn.disabled = true;
+    await sendMsg({ action: 'deleteWord', id: Number(okBtn.dataset.id) });
+    loadWords();
+    return;
+  }
+  // Cancel: restore × button
+  const cancelBtn = e.target.closest('.card-delete-cancel');
+  if (cancelBtn) {
+    const id = cancelBtn.dataset.id;
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'card-delete';
+    restoreBtn.dataset.id = id;
+    restoreBtn.title = 'Delete';
+    restoreBtn.textContent = '×';
+    cancelBtn.closest('.card-delete-confirm').replaceWith(restoreBtn);
+    return;
+  }
+  // Initial click: show inline ✓/✗ confirm widget
+  const delBtn = e.target.closest('.card-delete');
+  if (!delBtn || delBtn.disabled) return;
+  const id = delBtn.dataset.id;
+  const confirmWidget = document.createElement('span');
+  confirmWidget.className = 'card-delete-confirm';
+  confirmWidget.innerHTML = `
+    <button class="card-delete-ok" data-id="${id}" title="Confirm delete">✓</button>
+    <button class="card-delete-cancel" data-id="${id}" title="Cancel">✗</button>
+  `;
+  delBtn.replaceWith(confirmWidget);
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────
 // Open Review if cards are due, otherwise fall back to Words.
 (async () => {
+  await initLangBar();
   const { cards = [] } = await sendMsg({ action: 'getDue' });
   switchTab(cards.length > 0 ? 'review' : 'words');
 })();
